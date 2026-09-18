@@ -94,7 +94,7 @@ out = Path(os.environ["OUT_DIR"])
 skip = os.environ.get("SKIP_NAME", "")
 EXCLUDE_PREFIXES = (".git/", ".deploy/", "out/", "node_modules/", ".vscode/", ".idea/")
 EXCLUDE_FILES = {
-    "deploy_site.sh", "local_start.sh",
+    "deploy_site.sh", "local_start.sh", ".gitignore", ".gitattributes",
     "mesonxai-deploy-manifest.sha256", "mesonsoft-deploy-manifest.sha256",
 }
 rows = []
