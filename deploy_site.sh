@@ -21,20 +21,22 @@
 #   ./deploy_site.sh -m "my message"  # custom commit message
 #   ./deploy_site.sh --dry-run        # upload preview only (no FTP writes, no push)
 #   ./deploy_site.sh --skip-git       # upload only (no commit/push)
+#   ./deploy_site.sh --skip-build    # no build step (plain static site: no-op check)
 #   ./deploy_site.sh --skip-upload    # git only
 #   ./deploy_site.sh --force          # ignore checksum manifest; upload everything
 #
 # Credentials come from the "MesonX.ai" entry in ftp-config.json (project dir
 # first, then parent dir) or from FTP_HOST / FTP_USER / FTP_PASS / FTP_PORT.
 # NOTE: the shared ftp-config.json is not strict JSON (it has a missing
-# comma), so it is parsed with a tolerant regex, not a JSON parser.
+# comma between two entries), so it is parsed with a tolerant regex-based
+# reader, not json.load (which throws "Expecting ',' delimiter").
 
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_DIR"
 
-GIT_REMOTE_URL="${GIT_REMOTE_URL:-https://github.com/MesonX-ai/mesonsoft.git}"
+GIT_REMOTE_URL="${GIT_REMOTE_URL:-https://github.com/MesonX-ai/mesonx.ai.git}"
 
 # ---------------------------------------------------------------- args ----
 COMMIT_MSG=""
@@ -63,34 +65,44 @@ done
 
 # ------------------------------------------------------------------ logs ----
 BLUE=$'\033[1;34m'; GREEN=$'\033[1;32m'; YELLOW=$'\033[1;33m'; RED=$'\033[1;31m'; NC=$'\033[0m'
-log()  { printf '%s[Mesonsoft]%s %s\n' "$BLUE" "$NC" "$*"; }
-ok()   { printf '%s[Mesonsoft]%s ✓ %s\n' "$GREEN" "$NC" "$*"; }
-warn() { printf '%s[Mesonsoft]%s ⚠ %s\n' "$YELLOW" "$NC" "$*"; }
-fail() { printf '%s[Mesonsoft]%s ✗ %s\n' "$RED" "$NC" "$*" >&2; exit 1; }
+log()  { printf '%s[MesonX.ai]%s %s\n' "$BLUE" "$NC" "$*"; }
+ok()   { printf '%s[MesonX.ai]%s ✓ %s\n' "$GREEN" "$NC" "$*"; }
+warn() { printf '%s[MesonX.ai]%s ⚠ %s\n' "$YELLOW" "$NC" "$*"; }
+fail() { printf '%s[MesonX.ai]%s ✗ %s\n' "$RED" "$NC" "$*" >&2; exit 1; }
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || fail "Required command not found: $1 (install it and re-run)."
 }
 
 require_cmd git
-require_cmd npm
+if [[ -f package.json ]]; then
+  require_cmd npm
+fi
 require_cmd lftp
 require_cmd rsync
 require_cmd python3
 
 # ------------------------------------------------------ checksum helpers ----
-# Build a "<rel>\t<sha256>" manifest for every file under $1 (excluding
-# .DS_Store and the remote manifest copy), writing it to $2.
+# Build a "<rel>\t<sha256>" manifest for every DEPLOYABLE file under $1
+# (excluding .git/, .deploy/, out/, node_modules/, dev scripts and the remote
+# manifest copy itself), writing it to $2.
 hash_out() {
   OUT_DIR="$1" TMP_MANIFEST="$2" SKIP_NAME="$3" python3 - <<'PY'
 import hashlib, os
 from pathlib import Path
 out = Path(os.environ["OUT_DIR"])
 skip = os.environ.get("SKIP_NAME", "")
+EXCLUDE_PREFIXES = (".git/", ".deploy/", "out/", "node_modules/", ".vscode/", ".idea/")
+EXCLUDE_FILES = {
+    "deploy_site.sh", "local_start.sh",
+    "mesonxai-deploy-manifest.sha256", "mesonsoft-deploy-manifest.sha256",
+}
 rows = []
 for p in sorted(x for x in out.rglob("*") if x.is_file()):
     rel = p.relative_to(out).as_posix()
-    if rel == skip or rel.endswith(".DS_Store"):
+    if rel == skip or rel in EXCLUDE_FILES or rel.endswith(".DS_Store"):
+        continue
+    if rel.startswith(EXCLUDE_PREFIXES):
         continue
     rows.append(f"{rel}\t{hashlib.sha256(p.read_bytes()).hexdigest()}")
 Path(os.environ["TMP_MANIFEST"]).write_text(
@@ -173,25 +185,41 @@ else
 fi
 
 # ------------------------------------------------------------- 2. build ----
-if [[ ! -d node_modules ]]; then
-  log "node_modules missing — running npm install ..."
-  npm install
-fi
+# mesonx.ai is a plain static site (index.html + liquid-glass.js + assets/
+# in the project root). If a package.json with a build script exists (e.g. a
+# future Next.js migration), build it into out/; otherwise deploy the project
+# root directly (STATIC_SRC=.).
+STATIC_SRC="$PROJECT_DIR"
+if [[ -f package.json ]] && grep -q '"build"' package.json 2>/dev/null; then
+  if [[ ! -d node_modules ]]; then
+    log "node_modules missing — running npm install ..."
+    npm install
+  fi
 
-if [[ "$SKIP_BUILD" == true ]]; then
-  log "Build step skipped (--skip-build) — using existing out/."
+  if [[ "$SKIP_BUILD" == true ]]; then
+    log "Build step skipped (--skip-build) — using existing out/."
+  else
+    log "package.json with build script found — building static export (npm run build -> out/)..."
+    npm run build
+  fi
+  [[ -f out/index.html ]] || fail "out/index.html missing — static export did not run. Aborting."
+  ok "Static build is ready (out/)."
+  STATIC_SRC="$PROJECT_DIR/out"
 else
-  log "Building static export (next build -> out/)..."
-  npm run build
+  if [[ "$SKIP_BUILD" == true ]]; then
+    log "Build step skipped (--skip-build) — static site needs no build."
+  else
+    log "No package.json build script — plain static site, nothing to build."
+  fi
+  [[ -f index.html ]] || fail "index.html missing in $PROJECT_DIR — nothing to deploy. Aborting."
+  ok "Static source is ready (project root: index.html + assets/)."
 fi
-[[ -f out/index.html ]] || fail "out/index.html missing — static export did not run. Aborting."
-ok "Static build is ready (out/)."
 
 # ---------------------------------------- 3. dry-run: preview upload ----
 if [[ "$DRY_RUN" == true ]]; then
   log "Calculating upload preview (no FTP contact — commit was already made locally)."
-  OUT_DIR="$PROJECT_DIR/out"
-  REMOTE_MANIFEST_NAME="mesonsoft-deploy-manifest.sha256"
+  OUT_DIR="$STATIC_SRC"
+  REMOTE_MANIFEST_NAME="mesonxai-deploy-manifest.sha256"
   CACHE_MANIFEST="$PROJECT_DIR/.deploy/last-deploy-manifest.sha256"
   TMP_DIR="$(mktemp -d)"
   LOCAL_MANIFEST="$TMP_DIR/local-manifest.sha256"
@@ -225,6 +253,7 @@ FTP_HOST="${FTP_HOST:-}"
 FTP_USER="${FTP_USER:-}"
 FTP_PASS="${FTP_PASS:-}"
 FTP_PORT="${FTP_PORT:-21}"
+FTP_PATH="${FTP_PATH:-}"
 
 if [[ -z "$FTP_HOST" || -z "$FTP_USER" || -z "$FTP_PASS" ]]; then
   FTP_CONFIG="${FTP_CONFIG:-}"
@@ -236,35 +265,55 @@ if [[ -z "$FTP_HOST" || -z "$FTP_USER" || -z "$FTP_PASS" ]]; then
   [[ -f "$FTP_CONFIG" ]] || fail "ftp-config.json not found and FTP_HOST/FTP_USER/FTP_PASS not set."
 
   CREDS="$(FTP_CONFIG="$FTP_CONFIG" python3 - <<'PY'
-import json, os
-cfg = json.load(open(os.environ["FTP_CONFIG"]))
-for e in cfg:
-    if e.get("name", "").lower() == "mesonsoft":
-        print(f"{e.get('host','')}\t{e.get('port',21)}\t{e.get('username','')}\t{e.get('password','')}")
+import os, re
+raw = open(os.environ["FTP_CONFIG"], encoding="utf-8").read()
+# Tolerantly split the loose array into {...} blocks (shared ftp-config.json
+# is missing a comma between two entries, so json.load fails).
+blocks = re.findall(r"\{[^{}]*\}", raw, re.S)
+want = "mesonx.ai"
+found = None
+fallback = None
+for b in blocks:
+    name = (re.search(r'"name"\s*:\s*"([^"]*)"', b) or [None, ""])[1]
+    if name.lower() == want:
+        found = b
         break
+    if fallback is None and name.lower() == "mesonsoft":
+        fallback = b
+if found is None:
+    found = fallback  # legacy fallback: root FTP user
+if found:
+    def g(k, d=""):
+        m = re.search(r'"%s"\s*:\s*(?:"([^"]*)"|(\d+))' % k, found)
+        return (m.group(1) if m.group(1) is not None else m.group(2)) if m else d
+    print(f"{g('host')}\t{g('port', '21')}\t{g('username')}\t{g('password')}\t{g('path', '')}")
 PY
 )"
-  [[ -n "$CREDS" ]] || fail "No \"Mesonsoft\" entry found in $FTP_CONFIG."
+  [[ -n "$CREDS" ]] || fail "No \"MesonX.ai\" (or legacy \"Mesonsoft\") entry found in $FTP_CONFIG."
   [[ -n "$FTP_HOST" ]] || FTP_HOST="$(echo "$CREDS" | cut -f1)"
   [[ "$FTP_PORT" == "21" && -n "$(echo "$CREDS" | cut -f2)" ]] && FTP_PORT="$(echo "$CREDS" | cut -f2)"
   [[ -n "$FTP_USER" ]] || FTP_USER="$(echo "$CREDS" | cut -f3)"
   [[ -n "$FTP_PASS" ]] || FTP_PASS="$(echo "$CREDS" | cut -f4)"
+  FTP_PATH="$(echo "$CREDS" | cut -f5)"
 fi
 [[ -n "$FTP_HOST" && -n "$FTP_USER" && -n "$FTP_PASS" ]] || fail "Incomplete FTP credentials (host/user/pass)."
 
-# 3b. Resolve the upload target: the FTP ROOT folder itself. On this GoDaddy
-#     account the FTP root IS /public_html after login (verified live), so we
-#     deploy directly into it. We NEVER create anything here — just verify the
-#     login + listing works, and abort otherwise.
-OUT_DIR="$PROJECT_DIR/out"
-REMOTE_MANIFEST_NAME="mesonsoft-deploy-manifest.sha256"
-REMOTE_BASE="."
+# 3b. Resolve the upload target: the EXISTING mesonx.ai folder on the server
+#     (the "path" of the "MesonX.ai" entry in ftp-config.json, here "mesonx.ai").
+#     Per the header contract we NEVER create the base folder or anything
+#     outside it — only sub-folders INSIDE it (e.g. assets/) may be created by
+#     the mirror. FTP_PATH may be "mesonx.ai", "/public_html/mesonx.ai", or
+#     empty (already inside it) — normalize to the last two path components.
+OUT_DIR="$STATIC_SRC"
+REMOTE_MANIFEST_NAME="mesonxai-deploy-manifest.sha256"
+REMOTE_BASE="$(echo "${FTP_PATH:-mesonx.ai}" | sed -e 's#^/public_html/##' -e 's#^/*##' -e 's#/*$##')"
+[[ -n "$REMOTE_BASE" ]] || REMOTE_BASE="mesonx.ai"
 if ! lftp -u "$FTP_USER","$FTP_PASS" "$FTP_HOST" -p "$FTP_PORT" \
     -e "set ftp:passive-mode on; set ssl:verify-certificate no; set cmd:fail-exit on; cd $REMOTE_BASE; cls; quit" \
     >/dev/null 2>&1; then
-  fail "Could not list the FTP root on $FTP_HOST (login failed or root not accessible). The FTP root is expected to be the existing /public_html — nothing is ever created outside it."
+  fail "Could not cd into '$REMOTE_BASE' on $FTP_HOST (login failed or the existing mesonx.ai folder is not reachable). Create it once on the server — this script never creates the base folder itself."
 fi
-ok "Remote target: FTP root = /public_html (deploying directly into it; never created by this script)."
+ok "Remote target: existing folder '$REMOTE_BASE' (uploading only inside it; base folder never created by this script)."
 
 # 3c. Checksums + diff
 CACHE_DIR="$PROJECT_DIR/.deploy"
@@ -278,7 +327,7 @@ CHANGED_LIST="$TMP_DIR/changed-files.txt"
 DELTA_DIR="$TMP_DIR/upload-delta"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-log "Hashing local out/ (SHA-256)..."
+log "Hashing local source ($OUT_DIR) (SHA-256)..."
 hash_out "$OUT_DIR" "$LOCAL_MANIFEST" "$REMOTE_MANIFEST_NAME"
 
 if [[ "$FORCE" == true ]]; then
@@ -314,7 +363,7 @@ mkdir -p "$DELTA_DIR"
 cp "$LOCAL_MANIFEST" "$DELTA_DIR/$REMOTE_MANIFEST_NAME"
 
 # Upload the delta. lftp mirror -R may create sub-folders INSIDE $REMOTE_BASE
-# (e.g. _next/…) but never the base folder itself — we are already inside it.
+# (e.g. assets/…) but never the base folder itself — we are already inside it.
 # cmd:fail-exit is REQUIRED: without it lftp exits 0 even when mirror -R
 # failed partway (observed on GoDaddy: files silently skipped), which would
 # make the script record a false "deployed" manifest.
@@ -365,7 +414,7 @@ cp "$LOCAL_MANIFEST" "$CACHE_MANIFEST"
 ok "Uploaded $changed_count file(s). Checksum manifest updated ($CACHE_MANIFEST)."
 
 # ------------------------------------------------- post-deploy smoke test ----
-SITE_URL="${SITE_URL:-https://mesonsoft.com/}"
+SITE_URL="${SITE_URL:-https://mesonx.ai/}"
 log "Post-deploy smoke test: $SITE_URL"
 CODE="$(curl -s -o /dev/null -w '%{http_code}' -L --max-time 15 "$SITE_URL" || true)"
 case "$CODE" in
