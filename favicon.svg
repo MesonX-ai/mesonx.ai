@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Meson X">
+  <title>Meson X</title>
+  <defs>
+    <!-- Same dark stage as the site: #070a18 base with the #16215c hotspot. -->
+    <radialGradient id="mx-bg" cx="35%" cy="30%" r="90%">
+      <stop offset="0%" stop-color="#16215c"/>
+      <stop offset="55%" stop-color="#0b1132"/>
+      <stop offset="100%" stop-color="#070a18"/>
+    </radialGradient>
+    <!-- Brand gradient, identical stops to the animated "X" in the logo. -->
+    <linearGradient id="mx-x" gradientUnits="userSpaceOnUse" x1="9" y1="32" x2="55" y2="32">
+      <stop offset="0%" stop-color="#ff2fb4"/>
+      <stop offset="35%" stop-color="#7b2fff"/>
+      <stop offset="65%" stop-color="#00c6ff"/>
+      <stop offset="100%" stop-color="#22d3a7"/>
+    </linearGradient>
+    <!-- Faint liquid-glass sheen, echoing the panel on the site. -->
+    <radialGradient id="mx-sheen" cx="30%" cy="18%" r="70%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="0" y="0" width="64" height="64" rx="14" fill="url(#mx-bg)"/>
+  <rect x="0" y="0" width="64" height="64" rx="14" fill="url(#mx-sheen)"/>
+  <path d="M13 13 L51 51 M51 13 L13 51" fill="none" stroke="url(#mx-x)"
+        stroke-width="12" stroke-linecap="round"/>
+</svg>
