@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meson X — sQuark Cloud AI</title>
+<meta name="color-scheme" content="dark">
+<link rel="preload" href="assets/fonts/ZillahModernLine.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="assets/fonts/ZnikomitNo25.otf" as="font" type="font/otf" crossorigin>
+<style>
+  :root { color-scheme: dark }
+  * { box-sizing: border-box }
+  html, body { height: 100%; margin: 0; overflow: hidden; background: #070a18; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #fff;
+    height: 100vh; height: 100svh; display: flex; align-items: center;
+    justify-content: center; background: transparent; }
+  /* Stack = Row 1 (glass + Meson X) + Row 2 (products); the stack itself is
+     centered horizontally AND vertically in the viewport. */
+  .mesonx-stack { position: relative; z-index: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 15vh;
+    width: min(1200px, 94vw); max-height: 100vh; max-height: 100svh; }
+  /* Full-screen original background: fixed canvas draws the colourful
+     scene across the whole viewport — no solid black anywhere. */
+  canvas#glass { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; z-index: 0; }
+  /* Hero = glass stage; content block as a whole is screen-centered (see body).
+     Hero centers its text within itself. */
+  .mesonx-hero { position: relative; z-index: 1; flex: 0 0 auto; width: 100%; display: flex;
+    flex-direction: column; align-items: center; justify-content: center; padding: 0;
+    overflow: visible; background: transparent; }
+  /* Products live BELOW the glass layer, same screen — no page scrollbar.
+     Transparent so the full-screen colourful background shows through. */
+  .mesonx-page { position: relative; z-index: 1; flex: 0 0 auto; width: 100%; display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-start; padding: 6px 20px 12px; background: transparent; }
+
+  /* Same brand fonts as the site header — relative so the page works on file:// too.
+     display:block hides text until the brand fonts arrive (no fallback-font flash). */
+  @font-face { font-family: 'Zillah Modern Line'; src: url('assets/fonts/ZillahModernLine.ttf') format('truetype'); font-weight: normal; font-style: normal; font-display: block }
+  @font-face { font-family: 'ZnikomitNo25'; src: url('assets/fonts/ZnikomitNo25.otf') format('opentype'); font-weight: normal; font-style: normal; font-display: block }
+  /* Keep the hero hidden until brand fonts are ready (or timeout), so the
+     first paint never shows the fallback font. JS adds .fonts-ready. */
+  .mesonx-wrap { visibility: hidden; }
+
+  /* MESON X on the glass, centered, ≈60% of the glass panel width.
+     Glass panel spans 6%–94% of the viewport width (88vw); 60% of that = 52.8vw.
+     Glyph ratio measured from the site header: "MESON X" ≈ 128.2px at 42px.
+     Doubled from the compact 7.1vw/7.6vw sizes: text 14.2vw, X 15.2vw. */
+  .mesonx-wrap { position: relative; z-index: 2; display: inline-flex; flex-direction: row; align-items: baseline; justify-content: center;
+    line-height: 1; text-decoration: none; user-select: none; white-space: nowrap;
+    filter: drop-shadow(0 8px 30px rgba(0, 0, 0, 0.45)) }
+  .fonts-ready .mesonx-wrap, .fonts-fallback .mesonx-wrap { visibility: visible; }
+  .mesonx-text { font-family: 'Zillah Modern Line', 'Zillah Modern', serif; font-size: 14.2vw;
+    font-weight: normal; letter-spacing: .04em; color: #ffffff; line-height: 1; text-transform: uppercase;
+    text-shadow: 0 0 12px rgba(0, 198, 255, 0.55), 0 0 28px rgba(123, 47, 255, 0.35), 0 0 46px rgba(255, 47, 180, 0.22) }
+  .mesonx-x { position: relative; display: inline-block; font-family: 'ZnikomitNo25', 'Zillah Modern', serif;
+    font-size: 15.2vw; font-weight: normal; line-height: 1; margin-left: .09em;
+    animation: mesonx-pulse 4s ease-in-out infinite }
+  .mesonx-x-base { color: #ffffff }
+  .mesonx-x-grad { position: absolute; inset: 0;
+    background-image: linear-gradient(90deg, #ff2fb4, #7b2fff, #00c6ff, #22d3a7, #ff2fb4);
+    -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent;
+    opacity: 0; animation: mesonx-shine 4s ease-in-out infinite }
+  @keyframes mesonx-pulse { 0%,100% { transform: scale(1) } 50% { transform: scale(1.18) } }
+  @keyframes mesonx-shine { 0%,100% { opacity: 0 } 50% { opacity: 1 } }
+  @media (prefers-reduced-motion: reduce) { .mesonx-x, .mesonx-x-grad { animation: none } .mesonx-x-grad { opacity: 1 } }
+
+  .mesonx-sub { margin: 0 0 10px; font-size: clamp(13px, 1.4vw, 16px); color: rgba(255,255,255,.82);
+    letter-spacing: .02em; text-align: center }
+  .mesonx-products { display: grid; grid-template-columns: repeat(3, minmax(0, 280px)); gap: 16px;
+    margin-top: 0; justify-content: center }
+  .mesonx-card { display: flex; flex-direction: column; align-items: center; text-align: center;
+    padding: 18px 20px 16px; border-radius: 18px; text-decoration: none; color: #fff;
+    background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.16);
+    box-shadow: 0 18px 50px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.18); }
+  .mesonx-card-icon { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 16px;
+    border: 1px solid rgba(255,255,255,.22); margin-bottom: 10px; }
+  .mesonx-card-icon svg { width: 30px; height: 30px }
+  .mesonx-tint-cyan { color: #19c2e6; background: linear-gradient(145deg, rgba(27,176,206,.34), rgba(27,176,206,.10)) }
+  .mesonx-tint-purple { color: #9b7bff; background: linear-gradient(145deg, rgba(123,92,255,.34), rgba(123,92,255,.10)) }
+  .mesonx-tint-pink { color: #ff6aa5; background: linear-gradient(145deg, rgba(255,79,162,.32), rgba(255,79,162,.10)) }
+  .mesonx-card h2 { margin: 0 0 6px; font-size: 17px; font-weight: 700 }
+  .mesonx-card p { margin: 0 0 10px; font-size: 12.5px; line-height: 1.5; color: rgba(255,255,255,.75) }
+  .mesonx-card-cta { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; opacity: .85 }
+  .mesonx-card:hover { transform: translateY(-5px); border-color: rgba(255,255,255,.32); }
+  .mesonx-card:hover .mesonx-card-icon { transform: scale(1.08) rotate(-4deg); }
+  .mesonx-card-icon { transition: transform .35s cubic-bezier(.34,1.8,.64,1); }
+  .mesonx-card { transition: transform .3s cubic-bezier(.34,1.56,.64,1), border-color .3s ease; }
+  @media (max-width: 900px) { .mesonx-products { grid-template-columns: minmax(0, 420px) } }
+  /* Short screens: keep doubled Meson X; only compact products to avoid scrollbar */
+  @media (max-height: 800px) {
+    .mesonx-sub { display: none; }
+    .mesonx-card { padding: 12px 16px 12px; }
+    .mesonx-card-icon { width: 44px; height: 44px; border-radius: 13px; margin-bottom: 8px; }
+    .mesonx-card-icon svg { width: 24px; height: 24px; }
+    .mesonx-card p { display: none; }
+  }
+
+  #err { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 9; display: none;
+    max-width: 580px; padding: 18px 22px; border-radius: 14px; background: #2a1030; color: #ffd7e8;
+    font: 500 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; white-space: pre-wrap;
+    border: 1px solid #ff5ba1; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5) }
+</style>
+</head>
+<body>
+  <!-- Full-screen original background canvas (colourful scene, entire viewport) -->
+  <canvas id="glass" aria-label="Meson X liquid glass panel"></canvas>
+
+  <div class="mesonx-stack">
+  <header class="mesonx-hero">
+    <a class="mesonx-wrap" href="https://www.squark-browser.ai/cloud-ai/" target="_blank" rel="noopener"
+     title="Meson — Cloud AI" aria-label="Meson — Cloud AI">
+    <span class="mesonx-text">MESON</span><span class="mesonx-x"><span class="mesonx-x-base">X</span><span class="mesonx-x-grad" aria-hidden="true">X</span></span>
+  </a>
+  </header>
+
+  <!-- Below the glass layer: products over the background, same screen -->
+  <main class="mesonx-page">
+    <p class="mesonx-sub">sQuark Cloud AI — pick a product to explore</p>
+    <section class="mesonx-products" aria-label="Meson X products">
+      <a class="mesonx-card" href="https://www.squark-browser.ai" target="_blank" rel="noopener" aria-label="sQuarkAI — Enterprise AI">
+        <span class="mesonx-card-icon mesonx-tint-cyan" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="10" y="10" width="4" height="4"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg></span>
+        <h2>sQuarkAI</h2>
+        <p>Agentic AI built for the modern enterprise — power, privacy, creativity and intelligence.</p>
+        <span class="mesonx-card-cta">Explore sQuarkAI</span>
+      </a>
+      <a class="mesonx-card" href="https://www.squark-browser.ai/agentic_ai_studio/" target="_blank" rel="noopener" aria-label="Agentic AI Studio — build custom agents">
+        <span class="mesonx-card-icon mesonx-tint-purple" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l1.7 4.3L18 10l-4.3 1.7L12 16l-1.7-4.3L6 10l4.3-1.7z"/><path d="M18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg></span>
+        <h2>Agentic AI Studio</h2>
+        <p>Quickly build, deploy and govern AI agents with any LLM — consumer or enterprise automation.</p>
+        <span class="mesonx-card-cta">Open AI Studio</span>
+      </a>
+      <a class="mesonx-card" href="https://myfamilyassistant.ai/" target="_blank" rel="noopener" aria-label="My Fam AI — caring AI companion for family">
+        <span class="mesonx-card-icon mesonx-tint-pink" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10.5V20h13v-9.5"/><path d="M12 16.8s-2.7-1.7-2.7-3.5c0-1 .8-1.8 1.7-1.8.6 0 1 .3 1 .3s.4-.3 1-.3c.9 0 1.7.8 1.7 1.8 0 1.8-2.7 3.5-2.7 3.5z"/></svg></span>
+        <h2>My Fam AI</h2>
+        <p>A caring AI companion that simplifies daily life and improves family collaboration.</p>
+        <span class="mesonx-card-cta">Meet My Fam AI</span>
+      </a>
+    </section>
+  </main>
+  </div>
+  <div id="err"></div>
+
+  <!-- Liquid glass engine (pure WebGL, no CDN): -->
+  <script>
+    'use strict';
+    /* Gate first paint on brand fonts: reveal hero only after both faces load
+       (or 3s timeout, so the page never stays blank on font failure). */
+    (function () {
+      var done = false;
+      function show(ok) {
+        if (done) return; done = true;
+        document.documentElement.classList.add(ok ? 'fonts-ready' : 'fonts-fallback');
+      }
+      try {
+        if (document.fonts && document.fonts.load) {
+          var loads = [
+            document.fonts.load('16px "Zillah Modern Line"'),
+            document.fonts.load('16px "ZnikomitNo25"')
+          ];
+          Promise.all(loads).then(function () { show(true); }, function () { show(false); });
+          setTimeout(function () { show(false); }, 3000);
+        } else { show(true); }
+      } catch (e) { show(true); }
+    })();
+  </script>
+  <script src="liquid-glass.js"></script>
+  <script>
+    'use strict';
+    (function () {
+      try {
+        var api = MesonLiquidGlass.init(document.getElementById('glass'), {
+          rect:     [0.06, 0.30, 0.94, 0.70],
+          radiusPx: 96,
+          solidBg:  true
+        });
+        // Default specular highlight: center of the X in "MESON X" on load
+        // (matches the spot seen when hovering My Fam AI). uMouse is UV space
+        // with y=0 at bottom; X center measured via the .mesonx-x element box.
+        function glowAtXCenter() {
+          if (!api || !api.setMouse) return;
+          var x = document.querySelector('.mesonx-x');
+          if (!x) return;
+          var br = x.getBoundingClientRect();
+          var vw = window.innerWidth || 1, vh = window.innerHeight || 1;
+          api.setMouse([(br.left + br.right) / 2 / vw, 1 - (br.top + br.bottom) / 2 / vh]);
+        }
+        // Keep the glass panel glued to Row 1 (hero): measure hero box in
+        // viewport px, convert to shader UV (origin bottom-left), pad slightly.
+        function fitGlass() {
+          if (!api || !api.setRect) return;
+          var hero = document.querySelector('.mesonx-hero');
+          if (!hero) return;
+          var br = hero.getBoundingClientRect();
+          var vw = window.innerWidth || 1, vh = window.innerHeight || 1;
+          var padX = vw * 0.02, padY = vh * 0.03;
+          var x0 = Math.max(0, (br.left - padX) / vw);
+          var x1 = Math.min(1, (br.right + padX) / vw);
+          var y1 = Math.max(0, 1 - (br.top - padY) / vh);
+          var y0 = Math.min(1, 1 - (br.bottom + padY) / vh);
+          if (x1 > x0 && y1 > y0) api.setRect([x0, y0, x1, y1]);
+        }
+        fitGlass();
+        glowAtXCenter();
+        window.addEventListener('resize', fitGlass);
+        window.addEventListener('orientationchange', fitGlass);
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { fitGlass(); glowAtXCenter(); });
+        window.addEventListener('load', function () { fitGlass(); glowAtXCenter(); });
+      } catch (e) {
+        var el = document.getElementById('err');
+        el.style.display = 'block';
+        el.textContent = 'WebGL init failed:\n' + e.message;
+      }
+    })();
+  </script>
+</body>
+</html>
