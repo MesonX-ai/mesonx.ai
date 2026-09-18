@@ -414,7 +414,7 @@ cp "$LOCAL_MANIFEST" "$CACHE_MANIFEST"
 ok "Uploaded $changed_count file(s). Checksum manifest updated ($CACHE_MANIFEST)."
 
 # ------------------------------------------------- post-deploy smoke test ----
-SITE_URL="${SITE_URL:-https://mesonx.ai/}"
+SITE_URL="${SITE_URL:-https://mesonxai.mesonsoft.com/}"
 log "Post-deploy smoke test: $SITE_URL"
 CODE="$(curl -s -o /dev/null -w '%{http_code}' -L --max-time 15 "$SITE_URL" || true)"
 case "$CODE" in
