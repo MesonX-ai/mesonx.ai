@@ -47,7 +47,7 @@ SKIP_UPLOAD=false
 FORCE=false
 
 usage() {
-  sed -n '3,30p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '3,31p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 while [[ $# -gt 0 ]]; do
